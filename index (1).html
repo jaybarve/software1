@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Smart LT Line Monitor</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body { margin:0; font-family: 'Segoe UI', Arial, sans-serif; background: #f3f8ff; color: #263250;}
+    header { background: #194889; color: #fff; padding: 1.5rem .8rem; text-align: center; letter-spacing: .7px; box-shadow: 0 4px 12px #00224313;}
+    .container { max-width: 1150px; margin:2.2rem auto 1.2rem auto; background: #fff; border-radius: 12px; box-shadow: 0 6px 24px #2b456730; padding:2.1rem 2.5rem;}
+    .modes {display:flex; gap:1.2rem;}
+    .mode-btn { padding:0.65rem 1.7rem; border:none; border-radius: 6px; font-size:.99rem; cursor:pointer; background:#ecf6fe; color:#234; transition:.17s;}
+    .mode-btn.active { background: #1b64c6; color: #fff;}
+    .stats-bar { display:flex; gap:1.6rem; margin:1.5rem 0 1.1rem 0; flex-wrap:wrap;}
+    .stat { background:#f7fafd; border-radius:8px; min-width:130px; flex: 1; padding:1.2em 1.3em; line-height:1.30;}
+    .stat-title {font-size:.94em; color:#337;}
+    .stat-num {font-size:1.18em; font-weight: 600; letter-spacing:0.5px; color:#0b5b40;}
+    .search-bar {margin:2px 0 1.04rem 0;width:100%;font-size:1.05rem;padding:0.52rem 0.9rem; border:1px solid #9cb5d8; border-radius:6px; background: #f4fafd; outline:none;}
+    .dashboard-table { width: 100%; border-collapse: collapse;}
+    .dashboard-table th,.dashboard-table td { padding: 0.68rem 0.3rem; border-bottom: 1.15px solid #e0e5ec;text-align:left;font-size:.97rem;}
+    .dashboard-table th { background: #eaf5ff; color: #163c7c;}
+    .badge {display:inline-block;padding:.21em .8em;border-radius:13px;font-size:.97em;font-weight:600;margin-left:3px;}
+    .ok { background:#e8f5e9; color:#2e7d32;}
+    .cut { background:#ffe0b2; color:#ee7601;}
+    .fault {background:#ffebee;color:#c62828;}
+    .risk {background:#fff0ea;color:#bb150d;}
+    .ai {background:#eef2f7;color:#341c91;}
+    .btn-action {cursor:pointer; border:none; border-radius:7px;padding:5px 13px; margin:2px 0; font-weight:600;}
+    .btn-isolate {background:#ffe7e0; color:#d64515;}
+    .btn-restore {background:#eaf7e9;color:#30804b;}
+    .dispatch {background:#dceffd; color:#195ed1;border-radius:12px;font-size:.95em;padding:0.15em 0.7em;margin-right:3px;}
+    .iot-info {font-size:.98em; color:#284991;}
+    .ai-alert {background: #f6efff; color:#732d9b; border-radius: 7px; padding:0.1em .7em; font-size:.97em;}
+    .pbold { font-weight:600; color:#1d3860;}
+    .event-log {max-height:190px;overflow:auto;background:#fafcff;padding:1em 1.1em;border-radius:8px; font-size:.97em; margin-bottom:.7em;}
+    .notif-log { max-height:140px; overflow:auto; background:#f8f8fe; padding:0.7em 1em; border-radius:8px; font-size:.96em;}
+    .chart-bar {height:16px; background:#f0f5fa; display:inline-block; border-radius:6px; margin-right:5px;}
+    .pieWrap{ width:46px; display:inline-block; vertical-align:middle;}
+    .pie { width:42px; height:42px; border-radius:50%; background: conic-gradient(#2e7d32 0% 37%, #ee7601 37% 62%, #c62828 62% 100%, #e0e0e0 0); display:inline-block;}
+    .pieKey { font-size:.9em; padding:0 8px;}
+    @media (max-width:760px) { .container{padding:1.1rem 0.2rem;} .stat{margin-bottom:0.8em;}.dashboard-table th,.dashboard-table td{font-size:.88rem;} }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Smart LT Line Monitoring & Power Cut Info Portal</h1>
+  <div style="font-size:1.07rem;font-weight:400;margin-top:.7em;">Get real-time LT line status, advanced AI analytics, and public/electrician/admin dashboards</div>
+</header>
+<div class="container">
+  <!-- Mode Switch -->
+  <div class="modes" style="margin-bottom:1rem;">
+    <button class="mode-btn active" id="mode-public" onclick="setMode('public')">General Public</button>
+    <button class="mode-btn" id="mode-electrician" onclick="setMode('electrician')">Electrician</button>
+    <button class="mode-btn" id="mode-admin" onclick="setMode('admin')">Admin</button>
+  </div>
+
+  <!-- Key Statistics Dashboard -->
+  <div class="stats-bar">
+    <div class="stat"><div class="stat-title">Healthy Areas</div><div class="stat-num" id="count-ok">--</div></div>
+    <div class="stat"><div class="stat-title">Active Power Cuts</div><div class="stat-num" id="count-cut">--</div></div>
+    <div class="stat"><div class="stat-title">Faults Detected</div><div class="stat-num" id="count-fault">--</div></div>
+    <div class="stat"><div class="stat-title">Repairs in Progress</div><div class="stat-num" id="count-repair">--</div></div>
+    <div class="stat" style="min-width:170px;">
+      <div class="stat-title">Pie Analytics</div>
+      <span class="pieWrap"><span class="pie" id="piePie"></span></span>
+      <span class="pieKey" style="color:#2e7d32;">H</span>
+      <span class="pieKey" style="color:#ee7601;">C</span>
+      <span class="pieKey" style="color:#c62828;">F</span>
+    </div>
+  </div>
+
+  <!-- Area Filter -->
+  <input type="text" id="search" oninput="renderTable()" class="search-bar" placeholder="Search by area/zone/status/AI...">
+
+  <!-- Dashboard Table -->
+  <div>
+    <div id="table-title" class="pbold" style="margin:0.3em 0 0.18em 0;">Current Area Status</div>
+    <table class="dashboard-table">
+      <thead>
+        <tr>
+          <th>Area</th>
+          <th>Zone</th>
+          <th>Status</th>
+          <th style="min-width:79px;">IoT (A/V)</th>
+          <th>Recent/AI Alert</th>
+          <th id="admin-action-col">Action/Dispatch</th>
+        </tr>
+      </thead>
+      <tbody id="data-table"></tbody>
+    </table>
+  </div>
+
+  <!-- Safety and Tips -->
+  <div style="background:#e7f2fb;border-radius:8px;padding:0.8em 1em;margin:1.3em 0 0.6em 0; font-size:.97em;">
+    <b>Public Safety:</b> <span id="tips-area">Stay away from downed lines during outages. Do not touch electrical lines. For emergencies, call the utility helpline.</span>
+  </div>
+
+  <!-- Logs Section -->
+  <div style="display:flex;gap:2em;flex-wrap:wrap;">
+    <div style="flex:1;min-width:270px;">
+      <div class="pbold" style="margin:0.5em 0 .2em 0;">Event / Fault Log</div>
+      <div class="event-log" id="event-log"></div>
+    </div>
+    <div style="flex:1;min-width:250px;">
+      <div class="pbold" style="margin:0.5em 0 .2em 0;">Recent Notifications</div>
+      <div class="notif-log" id="notif-log"></div>
+    </div>
+  </div>
+</div>
+<script>
+const areaStatus = [
+  {
+    area: "Sector 5, City Center",
+    zone: "West",
+    status: "ok",
+    sensor: {current: 44, voltage: 225, anomaly:0},
+    ai: {risk:"Normal", prob:0.02, msg:"No risk detected"},
+    lastUpdate: "2025-10-03 19:10",
+    message: "Power supply normal.",
+    repairTeam: null,
+    history: [],
+    id: 1
+  },
+  {
+    area: "Green Park",
+    zone: "North",
+    status: "cut",
+    sensor: {current: 3, voltage: 8, anomaly:2},
+    ai: {risk:"Cut", prob:0.08, msg:"Scheduled power cut; normal maintenance"},
+    lastUpdate: "2025-10-03 18:55",
+    message: "Scheduled power cut (19:00-21:00).",
+    repairTeam: null,
+    id: 2,
+    history: [{time:"2025-10-03 18:50", desc:"Cut scheduled for maintenance", user:"System"}]
+  },
+  {
+    area: "Hanuman Nagar",
+    zone: "East",
+    status: "fault",
+    sensor: {current: 0, voltage: 7, anomaly:3},
+    ai: {risk:"FAULT", prob:0.84, msg:"Line break detected. High risk!"},
+    lastUpdate: "2025-10-03 19:16",
+    message: "LT line break detected. Repair team dispatched.",
+    repairTeam: "Team E2 (ETA 20 min)",
+    id: 3,
+    history: [
+      {time: "2025-10-03 19:12", desc: "Line break (auto-detect)", user:"AI"},
+      {time: "2025-10-03 19:13", desc: "Repair dispatched", user:"System"}
+    ]
+  },
+  {
+    area: "Shivaji Colony",
+    zone: "South",
+    status: "ok",
+    sensor: {current:41, voltage:227, anomaly:0},
+    ai: {risk:"Normal", prob:0.01, msg:"No risk detected"},
+    lastUpdate: "2025-10-03 19:12",
+    message: "Supply optimal.",
+    repairTeam: null,
+    id:4,
+    history: []
+  },
+  {
+    area: "Indira Bazar",
+    zone: "West",
+    status: "cut",
+    sensor: {current: 5, voltage: 9, anomaly:1},
+    ai: {risk:"Warning", prob:0.11, msg:"Possible supply loss soon."},
+    lastUpdate: "2025-10-03 18:40",
+    message: "Load shedding. Restore by 19:45.",
+    repairTeam: null,
+    id:5,
+    history: [{time:"2025-10-03 18:38", desc:"Load shedding started", user:"Admin"}]
+  },
+  {
+    area: "Ambedkar Chowk",
+    zone: "East",
+    status: "fault",
+    sensor: {current:0, voltage:0, anomaly:4},
+    ai: {risk:"FAULT", prob:0.98, msg:"Critical: Short circuit!"},
+    lastUpdate: "2025-10-03 19:17",
+    message: "Short circuit detected. Technician on way.",
+    repairTeam: "Team E4 (ETA 12 min)",
+    id:6,
+    history: [
+      {time:"2025-10-03 19:14", desc:"Short circuit", user:"AI"},
+      {time:"2025-10-03 19:15", desc:"Dispatch Team E4", user:"System"}
+    ]
+  }
+];
+// Demo notifications (simulates SMS/app)
+const notifData = [
+  {time:"19:13", area:"Hanuman Nagar", type:"AI Fault", msg:"Break detected. Avoid zone.", users:["Resident","Electrician"]},
+  {time:"19:14", area:"Ambedkar Chowk", type:"Critical Alert", msg:"Short circuit! Power isolated.", users:["Resident","Electrician"]},
+  {time:"18:50", area:"Green Park", type:"Scheduled Cut", msg:"Planned cut 19:00-21:00", users:["Resident"]},
+  {time:"18:38", area:"Indira Bazar", type:"Load Shedding", msg:"Temporary outage, back soon.", users:["Resident"]},
+  {time:"19:15", area:"Ambedkar Chowk", type:"Dispatch", msg:"Repair team on site in 12 mins", users:["Electrician"]}
+];
+let eventLog = [];
+const publicTips = "Stay away from downed lines during outages. Do not touch electrical lines. For emergencies, call the utility helpline.";
+const electricianTips = "For faults, confirm isolation using the 'Isolate' action. Wear PPE, check live status via dashboard, and update after repair.";
+const adminTips = "Monitor live sensor and AI flags. Use action controls for urgent faults/cuts. Ensure teams acknowledge repairs.";
+
+let currentMode = "public";
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById('mode-public').classList.toggle('active', mode === 'public');
+  document.getElementById('mode-electrician').classList.toggle('active', mode === 'electrician');
+  document.getElementById('mode-admin').classList.toggle('active', mode === 'admin');
+  renderTable();
+  document.getElementById('tips-area').innerText = (mode === 'public') ? publicTips : (mode === 'electrician' ? electricianTips : adminTips);
+}
+
+function renderStats() {
+  let cut=0, ok=0, fault=0, repairs=0;
+  areaStatus.forEach(a=>{
+    if (a.status==="cut") cut++;
+    else if (a.status==="ok") ok++;
+    else if (a.status==="fault") fault++;
+    if (a.status==="fault" && a.repairTeam) repairs++;
+  });
+  document.getElementById('count-ok').innerText = ok;
+  document.getElementById('count-cut').innerText = cut;
+  document.getElementById('count-fault').innerText = fault;
+  document.getElementById('count-repair').innerText = repairs;
+  // Pie analytics (approx)
+  let sum = ok+cut+fault;
+  let okp=Math.round(ok/sum*100),cutp=Math.round(cut/sum*100),fp=100-okp-cutp;
+  document.getElementById('piePie').style.background=`conic-gradient(#2e7d32 0% ${okp}%, #ee7601 ${okp}% ${okp+cutp}%, #c62828 ${okp+cutp}% 100%, #e0e0e0 0)`;
+}
+
+function renderEventLog() {
+  let html = "";
+  areaStatus.forEach(a => {
+    a.history.slice(-3).forEach(ev => {
+      html += `<div>[${ev.time}] <b>${a.area}:</b> ${ev.desc} <span style="color:#5b3fae;">(${ev.user})</span></div>`;
+    });
+  });
+  document.getElementById('event-log').innerHTML = html.length ? html : "<em>No fault or event logs.</em>";
+}
+function renderNotifLog() {
+  let html = "";
+  notifData.slice(0,8).forEach(n=>{
+    html += `<div>[${n.time}] <b>${n.area}:</b> ${n.msg} <span style="color:#1580c7;font-size:.93em;">(${n.type})</span></div>`;
+  });
+  document.getElementById('notif-log').innerHTML = html.length ? html : "<em>No notifications yet.</em>";
+}
+
+function renderTable() {
+  let search = document.getElementById('search').value.trim().toLowerCase();
+  let filtered = areaStatus.filter(r=>{
+    let fText = `${r.area} ${r.zone} ${r.status} ${r.ai.risk} ${r.message}`.toLowerCase();
+    if (currentMode === "electrician" && r.status === "ok") return false;
+    if (currentMode === "admin") return true;
+    return fText.includes(search);
+  });
+  let tableBody = "";
+  filtered.forEach((area,idx)=>{
+    let statusBadge = (area.status==="ok")
+      ? '<span class="badge ok">Healthy</span>'
+      : (area.status==="cut")
+        ? '<span class="badge cut">Cut</span>'
+        : '<span class="badge fault">Fault</span>';
+    let aiInfo = (area.ai.risk==="FAULT"||area.ai.prob>0.5)
+      ? `<span class="ai-alert">AI: ${area.ai.msg} (${Math.round(area.ai.prob*100)}%)</span>`
+      : area.ai.msg;
+    let iotInfo = `<span class="iot-info">${area.sensor.current}A/${area.sensor.voltage}V</span>`;
+    if(area.sensor.anomaly>0){
+      iotInfo += ` <span class="risk">Anomaly: ${area.sensor.anomaly}</span>`;
+    }
+    // Action for Electrician/Admin
+    let actionHtml = "";
+    if(currentMode==="electrician"||currentMode==="admin"){
+      if(area.status==="cut"){
+        actionHtml = `<button class="btn-action btn-restore" onclick="restoreLine(${area.id})">Restore</button>`;
+      }
+      else if(area.status==="fault"){
+        actionHtml = `<button class="btn-action btn-isolate" onclick="isolateLine(${area.id})">Isolate</button> `;
+        if(area.repairTeam)
+          actionHtml += `<span class="dispatch">${area.repairTeam}</span>`;
+        else
+          actionHtml += `<span class="dispatch" style="background:#fde5ee;color:#ad194e;">No team</span>`;
+      }
+      else{
+        actionHtml = `<span style="color:#7a9;">-</span>`;
+      }
+    }
+    // Public mode hides manual controls
+    else if(currentMode==="public"){
+      if(area.status!=="ok"){
+        actionHtml = area.message + ((area.repairTeam)?("<br><span class='dispatch'>"+area.repairTeam+"</span>"):"");
+      }else{
+        actionHtml = "<span style='color:#37804b;'>All ok</span>";
+      }
+    }
+
+    tableBody += `<tr>
+      <td>${area.area}</td>
+      <td>${area.zone}</td>
+      <td>${statusBadge}</td>
+      <td>${iotInfo}</td>
+      <td>${aiInfo}</td>
+      <td>${actionHtml}</td>
+    </tr>`;
+  });
+  document.getElementById('admin-action-col').innerText = (currentMode==="admin"||currentMode==="electrician") ? "Action/Dispatch" : "Status/Notice";
+  document.getElementById('table-title').innerText = (currentMode==="electrician")
+    ? "Technician Dashboard: Faults & Power Cuts"
+    : (currentMode==="admin")
+      ? "Admin Live Dashboard"
+      : "Current Area Status";
+  document.getElementById('data-table').innerHTML = (tableBody.length)?tableBody:`<tr><td colspan="6" style="text-align:center;color:#b66;">No matching records found.</td></tr>`;
+  renderStats();
+  renderEventLog();
+  renderNotifLog();
+}
+
+// Demo: Simulate live data every 70s (rotate)
+setInterval(()=>{
+  // pick a random status to rotate sensors/ai
+  let idx = Math.floor(Math.random() * areaStatus.length);
+  let a=areaStatus[idx];
+  // Simulate flip (demo only)
+  a.sensor.current = (a.status==="ok")?50:2+(Math.random()*5|0);
+  a.sensor.voltage = (a.status==="ok")?225+(Math.random()*6|0):9+(Math.random()*15|0);
+  if(a.status==="ok") {a.status="cut";a.message="Unexpected line check. ETA 45min.";a.ai={risk:"Cut",prob:.22,msg:"Transient anomaly detected."};a.sensor.anomaly=2;}
+  else if(a.status==="cut"){a.status="fault";a.message="Auto-detected break. Team dispatched.";a.ai={risk:"FAULT",prob:.64,msg:"Medium Risk: Fault detected."};a.repairTeam="Team E5 (ETA 18 min)";a.sensor.anomaly=3; a.history.push({time:"2025-10-03 19:20",desc:"AI-fault detected","user":"AI"})}
+  else{a.status="ok";a.message="Supply restored.";a.ai={risk:"Normal",prob:.03,msg:"Stable"};a.sensor.anomaly=0;a.repairTeam=null;a.history.push({time:"2025-10-03 19:25",desc:"Supply restored","user":"System"})}
+  renderTable();
+},70000);
+
+// Action handlers
+function isolateLine(id){
+  let a=areaStatus.find(x=>x.id===id);
+  if(!a)return;
+  a.status="cut";
+  a.lastUpdate="2025-10-03 19:22";
+  a.message="Line isolated (manual). Awaiting repair.";
+  a.history.push({time:"2025-10-03 19:22",desc:"Manual isolation by staff","user":"Electrician"});
+  a.ai={risk:"Cut",prob:.18,msg:"Under Maintenance (Isolated)"};
+  // add notification
+  notifData.unshift({time:"19:22",area:a.area,type:"Manual Isolation",msg:"Supply isolated for safety",users:["Resident","Electrician"]});
+  renderTable();
+}
+function restoreLine(id){
+  let a=areaStatus.find(x=>x.id===id);
+  if(!a)return;
+  a.status="ok";
+  a.lastUpdate="2025-10-03 19:23";
+  a.message="Supply and connection restored.";
+  a.history.push({time:"2025-10-03 19:23",desc:"Supply restored by team","user":(currentMode==="admin")?"Admin":"Electrician"});
+  a.ai={risk:"Normal",prob:.03,msg:"Stable"};
+  a.sensor.anomaly=0;
+  a.repairTeam=null;
+  notifData.unshift({time:"19:23",area:a.area,type:"Restored",msg:"Electricity restored",users:["Resident"]});
+  renderTable();
+}
+
+renderTable();
+</script>
+</body>
+</html>
